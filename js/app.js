@@ -24,19 +24,59 @@
     
     App.prototype.initListeners = function(){
       
-      var that = this;      
+      var that = this;
       
-      $("body").hammer().on("tap", function(e) {        
-        that.doNextInstruction();        
+      var interval = setInterval(function(){
+        var success = that.doNextInstruction();
+        if (!success) clearInterval(interval);
+      }, 6000);
+      
+      $("body").hammer().on("tap", function(e) {
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        } else {
+          that.doNextInstruction();
+        }               
       });
     };
     
-    App.prototype.doNextInstruction = function(){
-      if (this.instructionIndex >= this.instructions.length) return false;
+    App.prototype.addInstruction = function(w, h, x, y, center, delta, strategy){
+      var cx = x+center-1,
+          cy = -1*y+center,
+          cell = this.cells[cx+cy*w],
+          d = delta;
+          
+      // define direction words
+      if (!d) {        
+        directionWords = "begin just above center, paint";
+        
+      } else {
+        directionWords = "go";
+        if (d[0] > 0) directionWords += " right, paint";
+        else if (d[0] < 0) directionWords += " left, paint";
+        else if (d[1] > 0) directionWords += " up, paint";
+        else if (d[1] < 0) directionWords += " down, paint";
+      }
       
+      // keep track of words and direction in
+      cell.words = directionWords + " " + cell.words;
+      cell.dIn = d;    
+      // console.log(x, y, cx, cy, cell.x, cell.y);
+
+      // keep track of direction out
+      d = this.getDelta(d, w, h, x, y, strategy);      
+      cell.dOut = d;
+      
+      return cell;
+    };
+    
+    App.prototype.doNextInstruction = function(){      
       var instruction = this.instructions[this.instructionIndex],
           $overlay = $('#portrait-overlay'),
           $cell = $('#active-cell');
+          
+      if (!instruction) return false;
       
       // setup overlay and cell
       if (!$overlay.hasClass('active')) {
@@ -52,9 +92,12 @@
         background: instruction.hex
       });
       
-      console.log(instruction.words);   
+      // console.log(instruction.words);
+      this.speakWords(instruction.words);  
       
-      this.instructionIndex++;  
+      this.instructionIndex++;
+      
+      return true;
     };
     
     App.prototype.drawRaster = function(sourceId, targetId){      
@@ -153,6 +196,50 @@
       return words;      
     };
     
+    App.prototype.getDelta = function(delta, w, h, x, y, strategy){
+      
+      // if no delta, define beginning
+      if (!delta) {
+        if (strategy==='spiralEven') delta = [1, 0];
+        else if (strategy==='spiralOdd') delta = [0, -1];
+      }
+      
+      // counter-clockwise spiral with even rows/columns
+      if (strategy==='spiralEven') {
+        if ((x>0 && y>0 && x===y) 
+              || (x>0 && x===1-y)
+              || (x<=0 && Math.abs(x)+1===Math.abs(y))
+        ){     
+          delta = [-delta[1], delta[0]];
+        }
+      }
+      
+      // counter-clockwise spiral with odd rows/columns
+      if (strategy==='spiralOdd') {
+        if (x===y  || (x<0 && x===-y) || (x>0 && x===1-y)){
+          delta = [-delta[1], delta[0]];         
+        }
+      }
+      
+      // zig zag strategy
+      if (strategy==='zigZag') {        
+        var minxX = w/2*-1,
+            minY = w/2;
+                    
+        if (x-1<=minxX || x>=minY){
+          if (delta[1]===0) {
+            delta = [0,-1];
+          } else {
+            delta[0] = x > 0 ? -1 : 1;
+            delta[1] = 0;            
+          }
+        } 
+      }
+      
+      return delta;
+        
+    };
+    
     App.prototype.isBlank = function(h, s, b){
       return (s<=0 && b>=100);
     };
@@ -217,47 +304,50 @@
         }
       });
     };
-    
+
+    // Based on: http://stackoverflow.com/questions/398299/looping-in-a-spiral
     App.prototype.setupInstructions = function(w, h, gridSize){
       var that = this,
           layout = (w>h) ? 'landscape' : 'portrait',
           minD = _.min([w, h]),
           center = Math.floor(minD/2),
           x = 1, y = 0,
-          delta = [1, 0],
-          instructions = [];      
-      
-      if (layout==='landscape' && minD%2===0){
-        y--;
-      }
+          delta = false,
+          instructions = [],
+          totalCount = w*h,
+          spiralCount = Math.pow(minD, 2),
+          zigZagCount = totalCount - spiralCount;
       
       // TODO: deal with odd dimensions and landscape dimensions
       // http://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
+      if (layout==='landscape' && minD%2===0){
+        y--;
+      }
+      if (minD%2===1) {
+        x = 0;
+      }
       
       // do a square spiral first
-      _.times(Math.pow(minD, 2), function(i){
-        var cx = x+center-1,
-            cy = -1*y+center,
-            cell = that.cells[cx+cy*w];
-        
+      _.times(spiralCount, function(i){        
+        var cell = that.addInstruction(w, h, x, y, center, delta, 'spiralEven');        
         instructions.push(cell);
         
-        // console.log(x, y, cx, cy, cell.x, cell.y);
-        
-        // change direction
-        if ((x>0 && y>0 && x===y) 
-              || (x>0 && x===1-y)
-              || (x<=0 && Math.abs(x)+1===Math.abs(y))
-        ){     
-          delta = [-delta[1], delta[0]];     
-        }
-        
         // step x/y
+        delta = cell.dOut;
         x += delta[0];
         y += delta[1];
       });
       
       // zig-zag the rest
+      _.times(zigZagCount, function(j){
+        var cell = that.addInstruction(w, h, x, y, center, delta, 'zigZag');        
+        instructions.push(cell); 
+        
+        // step x/y
+        delta = cell.dOut;
+        x += delta[0];
+        y += delta[1];        
+      });
       
       // set instructions for class access      
       this.instructions = instructions;      
@@ -302,6 +392,22 @@
         that.raster = raster;        
         that.drawRasterCells(p, raster);     
       });
+    };
+    
+    App.prototype.speakWords = function(words){
+      // Create a new instance of SpeechSynthesisUtterance.
+      var msg = new SpeechSynthesisUtterance();
+      
+      // Set the text.
+      msg.text = words;
+      
+      // Set the attributes.
+      msg.volume = 1;
+      msg.rate = 1;
+      msg.pitch = 1;
+      
+      // Queue this utterance.
+      window.speechSynthesis.speak(msg);
     };
 
     return App;
