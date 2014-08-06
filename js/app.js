@@ -13,23 +13,55 @@
       this.raster = false;
       
       if (this.options.debug) {
-        this.colorStats = {
-          'h': [],
-          's': [],
-          'b': []
-        };  
+        this.setupLog(); 
       }
       
       this.setupColors();
             
       this.drawRaster('image-source', 'canvas-target');
+      
+    };
+    
+    App.prototype.initListeners = function(){
+      
+      var that = this;      
+      
+      $("body").hammer().on("tap", function(e) {        
+        that.doNextInstruction();        
+      });
+    };
+    
+    App.prototype.doNextInstruction = function(){
+      if (this.instructionIndex >= this.instructions.length) return false;
+      
+      var instruction = this.instructions[this.instructionIndex],
+          $overlay = $('#portrait-overlay'),
+          $cell = $('#active-cell');
+      
+      // setup overlay and cell
+      if (!$overlay.hasClass('active')) {
+        $overlay.addClass('active');
+        $cell.width(instruction.w);
+        $cell.height(instruction.h);
+      }
+      
+      // style cell
+      $cell.css({
+        top: instruction.y + 'px',
+        left: instruction.x + 'px',
+        background: instruction.hex
+      });
+      
+      console.log(instruction.words);   
+      
+      this.instructionIndex++;  
     };
     
     App.prototype.drawRaster = function(sourceId, targetId){      
       // setup canvas
       var that = this,
           $canvas = $('#'+targetId),
-          p = this.setupPaper($canvas, 400, 600);
+          p = this.setupPaper($canvas, 400, 500);
       
       // init view
       $canvas.removeClass('loaded'); 
@@ -44,14 +76,14 @@
     
     App.prototype.drawRasterCells = function(p, raster){
       var that = this,
-          gridSize = 20,
+          gridSize = this.options.gridSize,
           rW = raster.width,
           rH = raster.height,
           targetW = Math.round(rW/gridSize),
           targetH = Math.round(rH/gridSize);
       
-      // init colors
-      this.colors = [];
+      // init cells
+      this.cells = [];
       
       // Downsize the pixel content
       raster.size = new p.Size(targetW, targetH);
@@ -74,9 +106,10 @@
           });
           
           // add color to colors
-          that.colors.push({
-            x: x, y: y,
-            // h: h, s: s, b: b,
+          that.cells.push({
+            x: x*gridSize, y: y*gridSize,
+            hex: color.toCSS(true),
+            w: gridSize, h: gridSize,
             words: that.getColorWords(h, s, b)
           });
 
@@ -86,6 +119,9 @@
       if (this.options.debug) {
         this.logColorReport();
       }
+      
+      this.setupInstructions(targetW, targetH, gridSize);
+      this.initListeners();
     };
     
     App.prototype.getColorWords = function(h, s, b){      
@@ -98,9 +134,7 @@
       words = hWord.words;
       
       if (this.options.debug) {
-        this.colorStats.h.push(hWord.words);
-        this.colorStats.s.push(sWord.words);
-        this.colorStats.b.push(bWord.words);
+        this.logColor(h, s, b, hWord, sWord, bWord);
       }
       
       // add saturation word (e.g. dull, bold)
@@ -111,7 +145,29 @@
       if (bWord.override) words = bWord.words;
       else if (bWord.words.length) words = bWord.words + " " + words;
       
+      // check if this color is blank
+      if (this.isBlank(h, s, b)) {
+        words = "leave blank";
+      }
+      
       return words;      
+    };
+    
+    App.prototype.isBlank = function(h, s, b){
+      return (s<=0 && b>=100);
+    };
+    
+    App.prototype.logColor = function(h, s, b, hWord, sWord, bWord){
+      if (this.isBlank(h, s, b)) {
+        this.colorStats.h.push("blank");
+        this.colorStats.s.push("blank");
+        this.colorStats.b.push("blank");
+        
+      } else {
+        this.colorStats.h.push(hWord.words);
+        this.colorStats.s.push(sWord.words);
+        this.colorStats.b.push(bWord.words);
+      }
     };
     
     App.prototype.logColorReport = function(){
@@ -160,6 +216,60 @@
           });
         }
       });
+    };
+    
+    App.prototype.setupInstructions = function(w, h, gridSize){
+      var that = this,
+          layout = (w>h) ? 'landscape' : 'portrait',
+          minD = _.min([w, h]),
+          center = Math.floor(minD/2),
+          x = 1, y = 0,
+          delta = [1, 0],
+          instructions = [];      
+      
+      if (layout==='landscape' && minD%2===0){
+        y--;
+      }
+      
+      // TODO: deal with odd dimensions and landscape dimensions
+      // http://stackoverflow.com/questions/3706219/algorithm-for-iterating-over-an-outward-spiral-on-a-discrete-2d-grid-from-the-or
+      
+      // do a square spiral first
+      _.times(Math.pow(minD, 2), function(i){
+        var cx = x+center-1,
+            cy = -1*y+center,
+            cell = that.cells[cx+cy*w];
+        
+        instructions.push(cell);
+        
+        // console.log(x, y, cx, cy, cell.x, cell.y);
+        
+        // change direction
+        if ((x>0 && y>0 && x===y) 
+              || (x>0 && x===1-y)
+              || (x<=0 && Math.abs(x)+1===Math.abs(y))
+        ){     
+          delta = [-delta[1], delta[0]];     
+        }
+        
+        // step x/y
+        x += delta[0];
+        y += delta[1];
+      });
+      
+      // zig-zag the rest
+      
+      // set instructions for class access      
+      this.instructions = instructions;      
+      this.instructionIndex = 0;      
+    };
+    
+    App.prototype.setupLog = function(){      
+      this.colorStats = {
+        'h': [],
+        's': [],
+        'b': []
+      };
     };
     
     App.prototype.setupPaper = function($canvas, width, height){      

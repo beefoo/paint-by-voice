@@ -5,9 +5,10 @@
 
 /* Document */
 body {
-  color: $dark;
-  background: $white;
+  color: $white;
+  background: $dark;
   font-family: 'OpenSans', 'HelveticaNeue-Light', 'HelveticaNeue', Helvetica, Arial, sans-serif;
+  overflow: hidden;
 }
 
 /* Global Elements */
@@ -31,13 +32,24 @@ ul {
 
 /* Main */
 .container {
+  position: absolute;
   width: 400px;
-  margin: 20px auto;
-  position: relative;
+  height: 500px;
+  left: 50%;
+  top: 50%;
+  margin-left: -200px;
+  margin-top: -250px;
   @include clearfix();
 }
 .portrait {
-  img, canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  img,
+  canvas,
+  .overlay {
     width: 100%;
     height: auto;
     position: absolute;
@@ -48,13 +60,27 @@ ul {
     z-index: -1;
   }
   canvas {
-    width: 400px;
-    z-index: 1;
+    z-index: 10;
     @include opacity(0);
+    &.loaded {
+      @include animation(fadeIn 4s);
+    }
   }
-  canvas.loaded {
-    @include animation(fadeIn 4s);
+  .overlay {
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    z-index: 20;
+    @include opacity(0);
+    @include transition(opacity 0.5s);
+    &.active {
+      @include opacity(1);
+    }
+    .cell {
+      position: absolute;
+      z-index: 30;
+    }
   }
+  
 }
 
 @media only screen and (min-width: $breakMedium) {

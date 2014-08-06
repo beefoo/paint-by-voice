@@ -1,5 +1,6 @@
 var config = {
   debug: true,
+  gridSize: 20,
   // Range: 0-360
   colorHueList: [
     {words: "red", range: [0, 10]},
